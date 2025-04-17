@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-
+import { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { AlertCircle,  RefreshCw, AlertTriangle } from 'lucide-react';
 import {ErrorLog, ErrorInsights} from './utils/types'
 import { calculateInsights } from "./utils/helpers"
@@ -11,14 +11,20 @@ import Timeline from './componenets/tabs/Timeline';
 import ErrorLogs from './componenets/tabs/ErrorLogs';
 import ErrorDetail from './componenets/tabs/ErrorDetail';
 import RecentErrorsList from './componenets/tabs/RecentErrorsList';
+import { UserIcon, ArrowLeftOnRectangleIcon, ChevronDownIcon, } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
+
 export default function Dashboard() {
-  const [email, setEmail] = useState('');
+  // const [email, setEmail] = useState('');
   // const [mongodbUri, setMongodbUri] = useState('');
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
   const [insights, setInsights] = useState<ErrorInsights | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedError, setSelectedError] = useState<ErrorLog | null>(null);
+  const { user, logout, loading: authLoading } = useAuth();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const router = useRouter();
 
   const fetchUserMongoDBUri = async () => {
     try {
@@ -27,7 +33,7 @@ export default function Dashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email : user?.email} ),
       });
       const data = await response.json();
       if (data.mongodbUri) {
@@ -55,14 +61,16 @@ export default function Dashboard() {
     return data;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
+    // e.preventDefault();
     setLoading(true);
     try {
       const uri = await fetchUserMongoDBUri();
+      console.log(uri)
       if (uri) {
         const logs = await fetchErrorLogs(uri);
         setErrorLogs(logs);
+        console.log("logs",logs)
         setInsights(calculateInsights(logs));
       }
     } catch (error) {
@@ -71,7 +79,16 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    if (!authLoading && user) {
+      handleSubmit();
+    }
+  }, [authLoading, user]);
+  const toggleUserMenu = () => {
+    setShowUserMenu(!showUserMenu);
+  };
 
+  
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50">
       {/* Top Navigation Bar */}
@@ -82,44 +99,54 @@ export default function Dashboard() {
               <AlertCircle className="h-8 w-8 mr-2" />
               <h1 className="text-xl font-bold">OpenErr Dashboard</h1>
             </div>
+            <div className='flex items-center space-x-10'>
             <div>
               {insights && (
                 <div className="flex items-center space-x-2">
                   <span className="text-sm bg-white bg-opacity-20 px-2 py-1 rounded text-black">
                     {insights.totalErrors} Errors Tracked
                   </span>
-                  <RefreshCw onClick={() => handleSubmit} className="h-5 w-5 cursor-pointer hover:text-blue-200" />
-                </div>
+                  <RefreshCw onClick={handleSubmit} className="h-5 w-5 cursor-pointer hover:text-blue-200" />
+                  </div>
               )}
             </div>
+            {/* User Menu */}
+          <div className="relative">
+            <button 
+              onClick={toggleUserMenu}
+              className="flex items-center gap-2 text-gray-700 hover:text-indigo-600 bg-gray-100 hover:bg-gray-200 rounded-md py-2 px-3 transition-colors"
+            >
+              <UserIcon className="h-5 w-5" />
+              <span className="max-w-32 truncate">{user?.name || user?.email}</span>
+              <ChevronDownIcon className="h-4 w-4" />
+            </button>
+            
+            {showUserMenu && (
+              <>
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 border border-gray-200">
+                <button
+                onClick={()=>router.push('/profile')}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
+                  <UserIcon className="h-5 w-5" />
+                  Profile
+                </button>
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+                >
+                  <ArrowLeftOnRectangleIcon className="h-4 w-4" />
+                  Logout
+                </button>
+              </div>
+              </>
+            )}
+            </div>
+          </div>
           </div>
         </div>
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search Form */}
-        <div className="mb-8 bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-          <form onSubmit={handleSubmit}>
-            <div className="flex flex-col md:flex-row gap-4">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email to access your error logs"
-                className="flex-1 p-3 text-black border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-              <button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700 transition-colors text-white px-6 py-3 rounded-md font-medium shadow-sm"
-                disabled={loading}
-              >
-                {loading ? 'Loading...' : 'Fetch Error Data'}
-              </button>
-            </div>
-          </form>
-        </div>
-
         {loading && (
           <div className="flex justify-center items-center py-12">
             <div className="animate-pulse flex flex-col items-center">

@@ -4,7 +4,7 @@ import clientPromise from '../../lib/mongodb';
 export async function POST(request: Request) {
   try {
     const { email } = await request.json();
-
+console.log(email,"email")
     if (!email) {
       return NextResponse.json(
         { error: 'Email is required' },
