@@ -1,20 +1,14 @@
 import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import { sign } from 'jsonwebtoken';
 import clientPromise from '../../lib/mongodb';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const { email, otp } = body;
 
-    // Connect to our database
     const client = await clientPromise;
     const db = client.db('error-logger');
 
-    // Find user by email
     const user = await db.collection('users').findOne({ email });
     
     if (!user) {
@@ -24,47 +18,49 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    
-    if (!isPasswordValid) {
+    if (!user.otp || user.otp.code !== otp || new Date(user.otp.expiresAt) < new Date()) {
       return NextResponse.json(
-        { error: 'Invalid credentials' },
+        { error: 'Invalid or expired OTP' },
         { status: 401 }
       );
     }
 
-    // Create JWT token
-    const token = sign(
-      { 
-        userId: user._id.toString(),
-        email: user.email
-      }, 
-      JWT_SECRET, 
-      { expiresIn: '7d' }
+    // Clear OTP after successful verification
+    await db.collection('users').updateOne(
+      { email },
+      { $unset: { otp: "" } }
     );
 
-    // Create response with user data
+    // Create a simple token (just the user ID)
+    const token = user._id.toString();
+
+    // Create the response
     const response = NextResponse.json({
       message: 'Login successful',
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
-        email: user.email
+        email: user.email,
+        projects: user.projects || [],
       }
     });
-    
-    // Set cookie on response
+
+    // Set the cookie with proper headers
     response.cookies.set({
-      name: 'auth_token',
+      name: 'token',
       value: token,
       httpOnly: true,
       path: '/',
-      secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60 * 24 * 7, // 7 days
-      sameSite: 'strict'
+      sameSite: 'lax'
     });
-    console.log(response,"response")
+
+    // Add CORS headers
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+    response.headers.set('Access-Control-Allow-Origin', request.headers.get('origin') || '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
     return response;
   } catch (error) {
     console.error('Login error:', error);

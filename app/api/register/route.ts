@@ -1,162 +1,86 @@
-// import { NextResponse } from 'next/server';
-// import crypto from 'crypto';
-// // import Joi from 'joi';
-// import clientPromise from '../../lib/mongodb';
-
-// // // Validation schema
-// // const registrationSchema = Joi.object({
-// //   name: Joi.string().required(),
-// //   email: Joi.string().email().required(),
-// //   mongodbUri: Joi.string().required().pattern(/^mongodb(\+srv)?:\/\//)
-// // });
-
-// export async function POST(request: Request) {
-//   try {
-//     const body = await request.json();
-//     console.log("Request body:", body);
-
-//     // Validate request body
-//     // const { error } = registrationSchema.validate(body);
-//     // if (error) {
-//     //   return NextResponse.json(
-//     //     { error: error.details[0].message },
-//     //     { status: 400 }
-//     //   );
-//     // }
-
-//     // // Test MongoDB connection with provided URI
-//     // try {
-//     //   const testClient = new MongoClient(body.mongodbUri);
-//     //   await testClient.connect();
-//     //   await testClient.close();
-//     // } catch (err) {
-//     //   console.error("MongoDB connection test failed:", err);
-//     //   return NextResponse.json(
-//     //     { error: 'Invalid MongoDB URI or connection failed' },
-//     //     { status: 400 }
-//     //   );
-//     // }
-
-//     // Connect to our main database
-//     const client = await clientPromise;
-//     const db = client.db('error-logger');
-
-//     // Check if email already exists
-//     const existingUser = await db.collection('users').findOne({ email: body.email });
-//     if (existingUser) {
-//       return NextResponse.json(
-//         { error: 'Email already registered' },
-//         { status: 400 }
-//       );
-//     }
-
-//     // Generate API key
-//     const apiKey = crypto.randomBytes(32).toString('hex');
-//     console.log("Generated API key:", apiKey);
-
-//     // Create new user
-//     const user = {
-//       name: body.name,
-//       email: body.email,
-//       apiKey,
-//       mongodbUri: body.mongodbUri,
-//       createdAt: new Date()
-//     };
-
-//     await db.collection('users').insertOne(user);
-
-//     return NextResponse.json({
-//       message: 'User registered successfully',
-//       apiKey,
-//       mongodbUri: body.mongodbUri
-//     });
-//   } catch (error) {
-//     console.error('Registration error:', error);
-//     return NextResponse.json(
-//       { error: error.message || 'Internal server error' },
-//       { status: 500 }
-//     );
-//   }
-// } 
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
-import { sign } from 'jsonwebtoken';
+import { cookies } from 'next/headers';
+import { ObjectId, Collection } from 'mongodb';
 import clientPromise from '../../lib/mongodb';
+import { User } from '../../types/index';
+// import { encrypt } from '../../utils/crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log("Request body:", body);
+    const { name, email, password, mongodbUri } = body;
 
-    // Connect to our main database
-    const client = await clientPromise;
-    const db = client.db('error-logger');
-
-    // Check if email already exists
-    const existingUser = await db.collection('users').findOne({ email: body.email });
-    if (existingUser) {
+    if (!name || !email || !password || !mongodbUri) {
       return NextResponse.json(
-        { error: 'Email already registered' },
+        { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(body.password, salt);
+    const client = await clientPromise;
+    const db = client.db('error-logger');
+    const users = db.collection('users') as Collection<User>;
+
+    // Check if user already exists
+    const existingUser = await users.findOne({ email });
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'User already exists' },
+        { status: 400 }
+      );
+    }
 
     // Generate API key
     const apiKey = crypto.randomBytes(32).toString('hex');
-    console.log("Generated API key:", apiKey);
+    
+    // Encrypt MongoDB URI with API key
+    // const encryptedMongodbUri = encrypt(mongodbUri, apiKey);
 
     // Create new user
-    const user = {
-      name: body.name,
-      email: body.email,
-      password: hashedPassword,
+    const newUser: Omit<User, '_id'> = {
+      name,
+      email,
+      password: await bcrypt.hash(password, 10),
       apiKey,
-      mongodbUri: body.mongodbUri,
-      createdAt: new Date()
+      projects: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
 
-    const result = await db.collection('users').insertOne(user);
+    const result = await users.insertOne(newUser as User);
 
-    // Create JWT token for authentication
-    const token = sign(
-      { 
-        userId: result.insertedId.toString(),
-        email: body.email
-      }, 
-      JWT_SECRET, 
+    // Create JWT token
+    const token = jwt.sign(
+      { userId: result.insertedId.toString() },
+      process.env.JWT_SECRET!,
       { expiresIn: '7d' }
     );
 
-    // Create response with API key
-    const response = NextResponse.json({
-      message: 'User registered successfully',
-      apiKey,
-      mongodbUri: body.mongodbUri
-    });
-    
-    // Set cookie on response
-    response.cookies.set({
-      name: 'auth_token',
-      value: token,
+    // Set cookie
+    cookies().set('token', token, {
       httpOnly: true,
-      path: '/',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      sameSite: 'strict'
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 * 7 // 7 days
     });
-    
-    return response;
+
+    return NextResponse.json({
+      message: 'User registered successfully',
+      user: {
+        id: result.insertedId,
+        name,
+        email
+      }
+    });
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

@@ -1,126 +1,189 @@
 'use client';
 
 import React, { useState } from 'react';
-import { EnvelopeIcon, LockClosedIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { EnvelopeIcon, KeyIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 
 export default function Login() {
-  const router = useRouter();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [isOtpSent, setIsOtpSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { sendOtp, login } = useAuth();
+  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    if (!email || !password) {
+      toast.error('Please enter both email and password');
+      return;
+    }
 
+    setIsLoading(true);
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch('/api/verify-credentials', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ email, password }),
       });
+
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned invalid response format');
+      }
 
       const data = await response.json();
 
-      if (response.ok) {
-        toast.success('Login successful!');
-        router.push('/dashboard');
-      } else {
-        toast.error(data.error || 'Login failed');
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to verify credentials');
       }
+
+      await sendOtp(email);
+      setIsOtpSent(true);
+      toast.success('OTP sent to your email');
     } catch (error) {
-      console.error(error);
-      toast.error('An error occurred during login');
+      console.error('Verification error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to verify credentials');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) {
+      toast.error('Please enter the OTP');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const success = await login(email, otp);
+      if (success) {
+        toast.success('Login successful');
+        window.location.href = '/dashboard';
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error(error instanceof Error ? error.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <>
-    <div className="max-w-md mx-auto px-4 py-12">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-indigo-700">OpenErr</h1>
-        <p className="text-gray-600 mt-2">Log in to access your dashboard</p>
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Sign in to your account
+        </h2>
       </div>
-      
-      <div className="bg-white shadow-lg rounded-xl p-6 border border-indigo-100">
-        <h2 className="text-2xl font-bold text-indigo-800 mb-6">Login</h2>
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label htmlFor="email" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
-              <EnvelopeIcon className="h-4 w-4 text-indigo-500" />
-              Email Address
-            </label>
-            <input
-              type="email"
-              name="email"
-              id="email"
-              required
-              value={formData.email}
-              onChange={handleChange}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 text-black"
-              placeholder="you@example.com"
-            />
-          </div>
 
-          <div>
-            <label htmlFor="password" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
-              <LockClosedIcon className="h-4 w-4 text-indigo-500" />
-              Password
-            </label>
-            <input
-              type="password"
-              name="password"
-              id="password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 text-black"
-              placeholder="••••••••"
-            />
-          </div>
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow-lg sm:rounded-lg sm:px-10 border border-gray-100">
+          {!isOtpSent ? (
+            <form className="space-y-6" onSubmit={handleEmailPasswordSubmit}>
+              <div>
+                <label htmlFor="email" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <EnvelopeIcon className="h-4 w-4 text-indigo-500" />
+                  Email address
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black"
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-          >
-            {isLoading ? 'Logging in...' : (
-              <>
-                Login
-                <ArrowRightIcon className="h-4 w-4" />
-              </>
-            )}
-          </button>
-        </form>
-        
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600">
-            Don&apos;t have an account?{' '}
-            <button 
-              onClick={() => router.push('/')}
-              className="text-indigo-600 hover:text-indigo-800 font-medium"
+              <div>
+                <label htmlFor="password" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <LockClosedIcon className="h-4 w-4 text-indigo-500" />
+                  Password
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black"
+                />
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+                >
+                  {isLoading ? 'Verifying...' : 'Continue'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form className="space-y-6" onSubmit={handleOtpSubmit}>
+              <div>
+                <label htmlFor="otp" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <KeyIcon className="h-4 w-4 text-indigo-500" />
+                  Enter OTP
+                </label>
+                <input
+                  id="otp"
+                  name="otp"
+                  type="text"
+                  required
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black"
+                  placeholder="Enter 6-digit OTP"
+                />
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+                >
+                  {isLoading ? 'Verifying...' : 'Verify OTP'}
+                </button>
+              </div>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setIsOtpSent(false)}
+                  className="text-sm text-indigo-600 hover:text-indigo-500 transition-colors"
+                >
+                  Back to login
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="mt-6 text-center">
+            <a
+              href="/register"
+              className="text-sm text-indigo-600 hover:text-indigo-500 transition-colors"
             >
-              Register here
-            </button>
-          </p>
+              Don&apos;t have an account? Register
+            </a>
+          </div>
         </div>
       </div>
     </div>
-    </>
   );
 }

@@ -96,9 +96,11 @@
 // } 
 
 import { NextResponse } from 'next/server';
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient } from 'mongodb';
 // import Joi from 'joi';
 import clientPromise from '../../lib/mongodb'; // Your main MongoDB client promise
+import { ErrorLog } from '@/app/types/index';
+import { ObjectId } from 'mongodb';
 
 // Validation schema for incoming error logs
 // const errorLogSchema = Joi.object({
@@ -129,14 +131,12 @@ export async function OPTIONS() {
 export async function POST(request: Request) {
   console.log("Processing error log request...");
   try {
-    // Handle CORS preflight
     const headers = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
 
-    // Authorization header
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized: No API key provided' }, { status: 401, headers });
@@ -144,62 +144,55 @@ export async function POST(request: Request) {
     const apiKey = authHeader.split(' ')[1];
     console.log("API Key:", apiKey);
 
-    // Parse and validate request body
     const body = await request.json();
-    // console.log("Request body:", body);
-    // const { error } = errorLogSchema.validate(body);
-    // console.log("Validation error:", error);
-    // if (error) {
-    //   console.error("Validation error:", error);
-    //   return NextResponse.json({ error: error.details[0].message }, { status: 400, headers });
-    // }
 
-    // Connect to main MongoDB and look up user
     const mainClient = await clientPromise;
-    const mainDb = mainClient.db('error-logger'); // or your main DB name
-    const user = await mainDb.collection('users').findOne({ apiKey });
+    const mainDb = mainClient.db('error-logger');
+    
+    const user = await mainDb.collection('users').findOne({
+      'projects.apiKey': apiKey
+    });
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized: Invalid API key' }, { status: 401, headers });
     }
-    console.log("User found:", user);
 
-    // Connect to user's MongoDB using their personal URI
-    const userClient = new MongoClient(user.mongodbUri);
+    const project = user.projects.find(p => p.apiKey === apiKey);
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404, headers });
+    }
+
+    const userClient = new MongoClient(project.mongodbUri);
     await userClient.connect();
-    const userDb = userClient.db('error-log'); // Use default DB from URI
+    const userDb = userClient.db('error-log');
 
-    // Save error logs to user's DB
     const savedErrors = await Promise.all(
       body.errors.map(async (err) => {
-        const errorLog = {
-          userId: new ObjectId(user._id),
-          errorType: err.type,
+        const errorLog: ErrorLog = {
+          _id: new ObjectId(),
           message: err.message,
           stackTrace: err.stack,
-          url: err.url,
-          metadata: err.metadata,
-          timestamp: new Date().getTime(),
+          timestamp: new Date(),
+          metadata: err.metadata || {}
         };
         return await userDb.collection('errors').insertOne(errorLog);
       })
     );
 
-    // Close user-specific DB connection
     await userClient.close();
 
     return NextResponse.json(
       {
         message: 'Errors logged successfully',
         count: savedErrors.length,
-        storedIn: user.mongodbUri,
+        projectId: project._id
       },
       { status: 200, headers }
     );
   } catch (err) {
     console.error('Error saving error logs:', err);
     return NextResponse.json(
-      { error: err.message || 'Internal server error' },
+      { error: err instanceof Error ? err.message : 'Internal server error' },
       {
         status: 500,
         headers: {

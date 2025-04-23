@@ -1,29 +1,38 @@
-export interface User {
-  _id?: string;
+import { ObjectId } from 'mongodb';
+
+export interface Project {
+  _id: ObjectId;
   name: string;
-  email: string;
   apiKey: string;
   mongodbUri: string;
-  createdAt?: Date;
+  createdAt: Date;
+  errors: ErrorLog[];
 }
 
 export interface ErrorLog {
-  _id?: string;
-  userId: string;
-  errorType: string;
+  _id: ObjectId;
   message: string;
-  stackTrace?: string;
-  url?: string;
-  metadata?: Record<string, unknown>;
-  timestamp?: Date;
+  stackTrace: string;
+  timestamp: Date;
+  metadata: Record<string, any>;
+}
+
+export interface User {
+  _id: ObjectId;
+  name: string;
+  email: string;
+  password: string;
+  apiKey: string;
+  projects: Project[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface ErrorLogRequest {
-  errors: Array<{
-    type: string;
+  apiKey: string;
+  error: {
     message: string;
-    stack?: string;
-    url?: string;
-    metadata?: Record<string, unknown>;
-  }>;
+    stackTrace: string;
+    metadata?: Record<string, any>;
+  };
 } 

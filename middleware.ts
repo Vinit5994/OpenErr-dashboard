@@ -1,19 +1,27 @@
 import { NextResponse } from 'next/server';
 import { NextRequest } from 'next/server';
-import { verify } from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // Paths that don't require authentication
-const publicPaths = ['/', '/login', '/api/login', '/api/register'];
+const publicPaths = [
+  '/',
+  '/login',
+  '/register',
+  '/api/login',
+  '/api/register',
+  '/api/send-otp',
+  '/api/verify-credentials',
+  '/_next',
+  '/favicon.ico'
+];
 
 export function middleware(request: NextRequest) {
-  // Get the path of the request
   const path = request.nextUrl.pathname;
   
   // Check if path is public
   const isPublicPath = publicPaths.some(publicPath => 
-    path === publicPath || path.startsWith('/api/_next')
+    path === publicPath || 
+    path.startsWith('/_next') || 
+    path.startsWith('/api/_next')
   );
   
   if (isPublicPath) {
@@ -21,22 +29,19 @@ export function middleware(request: NextRequest) {
   }
 
   // Get the token from the cookies
-  const token = request.cookies.get('auth_token')?.value;
+  const token = request.cookies.get('token')?.value;
 
-  // If no token, redirect to login
-  if (!token) {
+  // If no token and trying to access protected route, redirect to login
+  if (!token && !isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  try {
-    // Verify token
-    verify(token, JWT_SECRET);
-    return NextResponse.next();
-  } catch (error) {
-    console.log(error)
-    // If token is invalid, redirect to login
-    return NextResponse.redirect(new URL('/login', request.url));
+  // If token exists and trying to access auth pages, redirect to dashboard
+  if (token && (path === '/login' || path === '/register')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
+
+  return NextResponse.next();
 }
 
 export const config = {

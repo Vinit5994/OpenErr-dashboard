@@ -24,66 +24,135 @@ export default function Dashboard() {
   const [selectedError, setSelectedError] = useState<ErrorLog | null>(null);
   const { user, logout, loading: authLoading } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchUserMongoDBUri = async () => {
+  // const fetchUserMongoDBUri = async () => {
+  //   try {
+  //     const response = await fetch('/api/get-mongodb-uri', {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({ email : user?.email} ),
+  //     });
+  //     const data = await response.json();
+  //     if (data.mongodbUri) {
+  //       // setMongodbUri(data.mongodbUri);
+  //       return data.mongodbUri;
+  //     }
+  //   } catch (error) {
+  //     console.error('Error fetching MongoDB URI:', error);
+  //   }
+  //   return null;
+  // };
+
+  const handleProjectChange = (projectKey: string) => {
+    // Clear previous data when switching projects
+    setErrorLogs([]);
+    setInsights(null);
+    setSelectedError(null);
+    setActiveTab('overview');
+    setError(null);
+    setSelectedProject(projectKey);
+  };
+
+  const fetchErrorLogs = async (uri: string) => {
     try {
-      const response = await fetch('/api/get-mongodb-uri', {
+      const res = await fetch('/api/submit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email : user?.email} ),
+        body: JSON.stringify({
+          uri: uri,
+          apiKey: user?.projects[0].apiKey
+        }),
       });
-      const data = await response.json();
-      if (data.mongodbUri) {
-        // setMongodbUri(data.mongodbUri);
-        return data.mongodbUri;
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        // Convert technical error messages to user-friendly ones
+        const userFriendlyError = getFriendlyErrorMessage(errorData.error);
+        throw new Error(userFriendlyError);
       }
+
+      const data = await res.json();
+      return data;
     } catch (error) {
-      console.error('Error fetching MongoDB URI:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred');
     }
-    return null;
   };
 
-  const fetchErrorLogs = async (uri: string) => {
-    const res = await fetch('/api/submit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        uri: uri,
-      }),
-    });
+  // Helper function to convert technical errors to user-friendly messages
+  const getFriendlyErrorMessage = (error: string): string => {
+    const errorMap: { [key: string]: string } = {
+      'Could not connect to MongoDB server': 'Connection to your database failed. Please check if your database is running.',
+      'Connection refused': 'Unable to connect to your database. Please verify your connection details.',
+      'Access denied': 'Invalid database credentials. Please check your username and password.',
+      'Errors collection not found': 'No error logs found in your database.',
+      'Invalid MongoDB URI format': 'Invalid database connection URL. Please check your connection string.',
+      'ENOTFOUND': 'Database server not found. Please check your connection details.',
+      'ETIMEDOUT': 'Connection to database timed out. Please try again.',
+      'ECONNREFUSED': 'Database connection refused. Please check if your database is running.',
+      'EACCES': 'Access denied to database. Please check your credentials.',
+    };
 
-    const data = await res.json();
-    return data;
+    // Find the most appropriate error message
+    for (const [key, message] of Object.entries(errorMap)) {
+      if (error.toLowerCase().includes(key.toLowerCase())) {
+        return message;
+      }
+    }
+
+    return 'Unable to connect to your database. Please check your connection details.';
   };
 
   const handleSubmit = async () => {
-    // e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
-      const uri = await fetchUserMongoDBUri();
-      console.log(uri)
-      if (uri) {
-        const logs = await fetchErrorLogs(uri);
-        setErrorLogs(logs);
-        console.log("logs",logs)
-        setInsights(calculateInsights(logs));
+      if (selectedProject) {
+        const project = user?.projects?.find(p => p.apiKey === selectedProject);
+        if (project) {
+          const logs = await fetchErrorLogs(project.mongodbUri);
+          if (logs.length === 0) {
+            setError('No error logs found in your database.');
+          } else {
+            setErrorLogs(logs);
+            setInsights(calculateInsights(logs));
+          }
+        }
       }
     } catch (error) {
       console.error('Error:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }
   };
+
   useEffect(() => {
-    if (!authLoading && user) {
-      handleSubmit();
+    if (!authLoading && user && user.projects && user.projects.length > 0) {
+      // Set the first project as selected by default
+      setSelectedProject(user.projects[0].apiKey);
     }
   }, [authLoading, user]);
+
+  useEffect(() => {
+    if (selectedProject) {
+      handleSubmit();
+    }
+  }, [selectedProject]);
+
   const toggleUserMenu = () => {
     setShowUserMenu(!showUserMenu);
   };
@@ -110,38 +179,53 @@ export default function Dashboard() {
                   </div>
               )}
             </div>
-            {/* User Menu */}
-          <div className="relative">
-            <button 
-              onClick={toggleUserMenu}
-              className="flex items-center gap-2 text-gray-700 hover:text-indigo-600 bg-gray-100 hover:bg-gray-200 rounded-md py-2 px-3 transition-colors"
-            >
-              <UserIcon className="h-5 w-5" />
-              <span className="max-w-32 truncate">{user?.name || user?.email}</span>
-              <ChevronDownIcon className="h-4 w-4" />
-            </button>
-            
-            {showUserMenu && (
-              <>
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 border border-gray-200">
-                <button
-                onClick={()=>router.push('/profile')}
-                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
-                  <UserIcon className="h-5 w-5" />
-                  Profile
-                </button>
-                <button
-                  onClick={logout}
-                  className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+            {/* Project Selector */}
+            {user?.projects && user.projects.length > 0 && (
+              <div className="relative">
+                <select
+                  value={selectedProject || ''}
+                  onChange={(e) => handleProjectChange(e.target.value)}
+                  className="bg-white bg-opacity-20 border border-white border-opacity-30 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 text-black"
                 >
-                  <ArrowLeftOnRectangleIcon className="h-4 w-4" />
-                  Logout
-                </button>
+                  {user.projects.map((project) => (
+                    <option key={project.apiKey} value={project.apiKey}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              </>
             )}
+            {/* User Menu */}
+            <div className="relative">
+              <button 
+                onClick={toggleUserMenu}
+                className="flex items-center gap-2 text-gray-700 hover:text-indigo-600 bg-gray-100 hover:bg-gray-200 rounded-md py-2 px-3 transition-colors"
+              >
+                <UserIcon className="h-5 w-5" />
+                <span className="max-w-32 truncate">{user?.name || user?.email}</span>
+                <ChevronDownIcon className="h-4 w-4" />
+              </button>
+              
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 border border-gray-200">
+                  <button
+                    onClick={() => router.push('/profile')}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+                  >
+                    <UserIcon className="h-5 w-5" />
+                    Profile
+                  </button>
+                  <button
+                    onClick={logout}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+                  >
+                    <ArrowLeftOnRectangleIcon className="h-4 w-4" />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
+            </div>
           </div>
         </div>
       </nav>
@@ -156,14 +240,53 @@ export default function Dashboard() {
           </div>
         )}
 
-        {!loading && !insights && (
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded-lg">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-red-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">{error}</p>
+                <div className="mt-2 flex items-center space-x-4">
+                  <button
+                    onClick={handleSubmit}
+                    className="text-sm font-medium text-red-700 hover:text-red-600 bg-red-100 px-3 py-1 rounded-md"
+                  >
+                    Try again
+                  </button>
+                  {error.includes('connection') && (
+                    <button
+                      onClick={() => router.push('/settings')}
+                      className="text-sm font-medium text-red-700 hover:text-red-600"
+                    >
+                      Check connection settings
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && !error && !insights && (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-100 text-center">
             <AlertTriangle className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-semibold text-gray-800 mb-2">Welcome to ErrorGuard</h2>
-            <p className="text-gray-600 max-w-lg mx-auto">
-              Enter your email address to fetch your application&apos;s error monitoring data. 
-              Track, analyze, and fix errors to improve your user experience.
+            <h2 className="text-2xl font-semibold text-gray-800 mb-2">No Error Data Found</h2>
+            <p className="text-gray-600 max-w-lg mx-auto mb-4">
+              We couldn&apos;t find any error logs in your database. This could mean:
             </p>
+            <ul className="text-gray-600 text-left max-w-md mx-auto mb-6">
+              <li className="mb-2">• Your application hasn&apos;t generated any errors yet</li>
+              <li className="mb-2">• The error logs are stored in a different collection</li>
+              <li className="mb-2">• Your database connection might need to be updated</li>
+            </ul>
+            <button
+              onClick={handleSubmit}
+              className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+            >
+              Refresh Data
+            </button>
           </div>
         )}
 
@@ -260,7 +383,7 @@ export default function Dashboard() {
         OpenErr Dashboard • Real-time Error Monitoring
         </div>
         <div className="text-gray-500 text-sm">
-          &copy; {new Date().getFullYear()} ErrorGuard, Inc.
+          &copy; {new Date().getFullYear()} OpenErr.
         </div>
       </div>
     </div>

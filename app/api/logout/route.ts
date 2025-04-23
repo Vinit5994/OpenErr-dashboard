@@ -5,7 +5,7 @@ export async function GET() {
   const cookieStore =await cookies();
 
   // Clear the auth_token by setting it with an expired maxAge
-  cookieStore.set('auth_token', '', {
+  cookieStore.set('token', '', {
     httpOnly: true,
     path: '/',
     secure: process.env.NODE_ENV === 'production',
