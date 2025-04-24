@@ -14,7 +14,7 @@ export interface ErrorLog {
   message: string;
   stackTrace: string;
   timestamp: Date;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface User {
@@ -33,6 +33,6 @@ export interface ErrorLogRequest {
   error: {
     message: string;
     stackTrace: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 } 

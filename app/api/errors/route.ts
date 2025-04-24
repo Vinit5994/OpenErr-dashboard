@@ -115,91 +115,146 @@ import { ObjectId } from 'mongodb';
 //   ).required(),
 // });
 
+// CORS headers configuration
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
 
+// Handle OPTIONS request for CORS preflight
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
+    headers: corsHeaders,
   });
 }
 
-
 export async function POST(request: Request) {
-  console.log("Processing error log request...");
   try {
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
+    // Validate request method
+    if (request.method !== 'POST') {
+      return new NextResponse(
+        JSON.stringify({ error: 'Method not allowed' }),
+        { status: 405, headers: corsHeaders }
+      );
+    }
 
+    // Get API key from Authorization header
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized: No API key provided' }, { status: 401, headers });
+      return new NextResponse(
+        JSON.stringify({ error: 'Unauthorized: No API key provided' }),
+        { status: 401, headers: corsHeaders }
+      );
     }
+
     const apiKey = authHeader.split(' ')[1];
-    console.log("API Key:", apiKey);
+    
+    // Parse request body
+    let body;
+    try {
+      body = await request.json();
+    } catch (error) {
+    console.log("Error parsing request body:", error);
+      return new NextResponse(
+        JSON.stringify({ error: 'Invalid request body' }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
-    const body = await request.json();
+    // Validate required fields
+    if (!body.errors || !Array.isArray(body.errors)) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Invalid request format: errors array is required' }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
+    // Connect to main database to find user
     const mainClient = await clientPromise;
     const mainDb = mainClient.db('error-logger');
     
+    // Find user by API key
     const user = await mainDb.collection('users').findOne({
       'projects.apiKey': apiKey
     });
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid API key' }, { status: 401, headers });
+      return new NextResponse(
+        JSON.stringify({ error: 'Unauthorized: Invalid API key' }),
+        { status: 401, headers: corsHeaders }
+      );
     }
 
+    // Find the specific project
     const project = user.projects.find(p => p.apiKey === apiKey);
     if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404, headers });
+      return new NextResponse(
+        JSON.stringify({ error: 'Project not found' }),
+        { status: 404, headers: corsHeaders }
+      );
     }
 
+    // Connect to user's MongoDB
     const userClient = new MongoClient(project.mongodbUri);
     await userClient.connect();
-    const userDb = userClient.db('error-log');
+    const userDb = userClient.db();
 
+    // Process and save errors
     const savedErrors = await Promise.all(
       body.errors.map(async (err) => {
         const errorLog: ErrorLog = {
           _id: new ObjectId(),
-          message: err.message,
-          stackTrace: err.stack,
+          message: err.message || 'No message provided',
+          stackTrace: err.stack || '',
           timestamp: new Date(),
-          metadata: err.metadata || {}
+          metadata: {
+            type: err.type || 'Error',
+            url: err.url || '',
+            userId: user._id.toString(),
+            browser: err.metadata?.browser || {},
+            device: err.metadata?.device || {},
+            duplicateCount: err.metadata?.duplicateCount || 0,
+            environment: err.metadata?.environment || 'production',
+            performance: err.metadata?.performance || {},
+            resources: err.metadata?.resources || [],
+            timing: err.metadata?.timing || {}
+          }
         };
         return await userDb.collection('errors').insertOne(errorLog);
       })
     );
 
+    // Close the user's MongoDB connection
     await userClient.close();
 
-    return NextResponse.json(
-      {
+    return new NextResponse(
+      JSON.stringify({
         message: 'Errors logged successfully',
         count: savedErrors.length,
         projectId: project._id
-      },
-      { status: 200, headers }
+      }),
+      { 
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      }
     );
-  } catch (err) {
-    console.error('Error saving error logs:', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal server error' },
-      {
+  } catch (error) {
+    console.error('Error saving error logs:', error);
+    return new NextResponse(
+      JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      }),
+      { 
         status: 500,
         headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
       }
     );
   }

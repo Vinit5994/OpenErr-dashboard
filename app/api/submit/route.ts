@@ -1,13 +1,12 @@
 import { MongoClient, MongoError } from 'mongodb';
 import { NextResponse } from 'next/server';
-import clientPromise from '../../lib/mongodb';
 
 export async function POST(req: Request) {
   let client: MongoClient | null = null;
   
   try {
     const { uri } = await req.json();
-
+    console.log(uri);
     if (!uri) {
       return NextResponse.json(
         { error: 'Missing MongoDB URI' },
@@ -23,18 +22,22 @@ export async function POST(req: Request) {
       );
     }
 
-    // Set connection timeout
-    const connectionTimeout = 10000; // 10 seconds
+    // Increase connection timeout values to handle slow connections
+    const connectionTimeout = 30000; // 30 seconds instead of 10
     client = new MongoClient(uri, {
       connectTimeoutMS: connectionTimeout,
-      serverSelectionTimeoutMS: connectionTimeout,
+      serverSelectionTimeoutMS: connectionTimeout * 2, // 60 seconds for server selection
       socketTimeoutMS: connectionTimeout,
+      maxPoolSize: 10, // Limit connection pool size
+      retryWrites: true, // Enable retry for write operations
+      retryReads: true, // Enable retry for read operations
     });
 
-    // Attempt to connect
-    await client.connect();
+    // Attempt to connect with a timeout promise
+    const connectPromise = client.connect();
+    await connectPromise;
     
-    // Verify connection
+    // Verify connection with a short ping timeout
     await client.db().admin().ping();
     
     const db = client.db('error-log');
@@ -67,7 +70,7 @@ export async function POST(req: Request) {
         case 'ENOTFOUND':
         case 'ETIMEDOUT':
           return NextResponse.json(
-            { error: 'Could not connect to MongoDB server. Please check your connection and try again.' },
+            { error: 'Could not connect to MongoDB server. Connection timed out. Please check your connection and try again.' },
             { status: 503 }
           );
         case 'ECONNREFUSED':
@@ -86,6 +89,14 @@ export async function POST(req: Request) {
             { status: 500 }
           );
       }
+    }
+
+    // Handle DNS lookup errors (common with MongoDB Atlas)
+    if (error instanceof Error && error.message.includes('querySrv ETIMEOUT')) {
+      return NextResponse.json(
+        { error: 'DNS lookup timeout. Check your network connection or MongoDB Atlas status.' },
+        { status: 503 }
+      );
     }
 
     // Handle other types of errors

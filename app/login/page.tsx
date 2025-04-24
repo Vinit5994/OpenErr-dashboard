@@ -32,21 +32,23 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
 
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Server returned invalid response format');
-      }
-
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to verify credentials');
       }
 
-      await sendOtp(email);
-      setIsOtpSent(true);
-      toast.success('OTP sent to your email');
+      if (data.success) {
+        try {
+          await sendOtp(email);
+          setIsOtpSent(true);
+          toast.success('OTP sent to your email');
+        } catch (error) {
+          console.error('OTP sending error:', error);
+          toast.error('Failed to send OTP. Please try again.');
+          setIsOtpSent(false);
+        }
+      }
     } catch (error) {
       console.error('Verification error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to verify credentials');
@@ -67,7 +69,9 @@ export default function Login() {
       const success = await login(email, otp);
       if (success) {
         toast.success('Login successful');
-        window.location.href = '/dashboard';
+        // Navigation will be handled by the AuthContext
+      } else {
+        throw new Error('Invalid OTP');
       }
     } catch (error) {
       console.error('Login error:', error);

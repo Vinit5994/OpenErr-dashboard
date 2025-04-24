@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import clientPromise from '../../lib/mongodb';
+import { connectToDatabase } from '../../lib/mongodb';
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
@@ -23,9 +23,8 @@ export async function POST(request: Request) {
     }
 
     // Connect to database
-    const client = await clientPromise;
-    const db = client.db('error-logger');
-
+    const { db } = await connectToDatabase();
+console.log(db,"db",email);
     // Find user by email
     const user = await db.collection('users').findOne({ email });
 

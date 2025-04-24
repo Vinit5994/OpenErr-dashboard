@@ -4,7 +4,11 @@ import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './contexts/AuthContext';
 
-const inter = Inter({ subsets: ['latin'] })
+// const inter = Inter({ 
+//   subsets: ['latin'],
+//   display: 'swap',
+//   variable: '--font-inter',
+// })
 
 export const metadata = {
   title: 'Error Monitoring Dashboard',
@@ -17,15 +21,15 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-      <AuthProvider>
-        <div className="min-h-screen bg-gray-50">
-          <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-            {children}
-          </main>
-        </div>
-        <Toaster position="top-right" />
+    <html lang="en" >
+      <body>
+        <AuthProvider>
+          <div className="min-h-screen bg-gray-50">
+            <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+              {children}
+            </main>
+          </div>
+          <Toaster position="top-right" />
         </AuthProvider>
       </body>
     </html>

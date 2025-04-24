@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { ObjectId, Collection } from 'mongodb';
+import {  Collection } from 'mongodb';
 import clientPromise from '../../lib/mongodb';
 import { User } from '../../types/index';
 // import { encrypt } from '../../utils/crypto';
@@ -11,18 +11,20 @@ import crypto from 'crypto';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export async function POST(request: Request) {
+  let client;
   try {
     const body = await request.json();
-    const { name, email, password, mongodbUri } = body;
+    const { name, email, password } = body;
 
-    if (!name || !email || !password || !mongodbUri) {
+    if (!name || !email || !password) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const client = await clientPromise;
+    // Connect to database
+    client = await clientPromise;
     const db = client.db('error-logger');
     const users = db.collection('users') as Collection<User>;
 
@@ -57,12 +59,12 @@ export async function POST(request: Request) {
     // Create JWT token
     const token = jwt.sign(
       { userId: result.insertedId.toString() },
-      process.env.JWT_SECRET!,
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
     // Set cookie
-    cookies().set('token', token, {
+   await cookies().set('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

@@ -3,13 +3,12 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { UserIcon, EnvelopeIcon, KeyIcon, ServerIcon } from '@heroicons/react/24/outline';
+import { UserIcon, EnvelopeIcon, KeyIcon } from '@heroicons/react/24/outline';
 
 export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mongodbUri, setMongodbUri] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
@@ -27,7 +26,6 @@ export default function Register() {
           name,
           email,
           password,
-          mongodbUri,
         }),
       });
 
@@ -104,34 +102,6 @@ export default function Register() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black"
               />
-            </div>
-
-            <div>
-              <label htmlFor="mongodbUri" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
-                <ServerIcon className="h-4 w-4 text-indigo-500" />
-                MongoDB Connection URI
-              </label>
-              <input
-                id="mongodbUri"
-                name="mongodbUri"
-                type="text"
-                required
-                value={mongodbUri}
-                onChange={(e) => setMongodbUri(e.target.value)}
-                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black"
-                // placeholder="mongodb://username:password@host:port/database"
-              />
-              <div className="mt-2 text-sm text-gray-500">
-                <p className="mb-2">Your MongoDB URI should have the following permissions:</p>
-                <ul className="list-disc pl-4 space-y-1">
-                  <li>Read and write access to the database</li>
-                  <li>Access to create and modify collections</li>
-                  <li>No admin privileges required</li>
-                </ul>
-                <p className="mt-2 text-xs text-gray-400">
-                  Example: mongodb+srv://username:password@cluster.mongodb.net/your-database
-                </p>
-              </div>
             </div>
 
             <div>
